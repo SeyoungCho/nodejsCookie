@@ -5,13 +5,33 @@ var url = require('url');
 var qs = require('querystring');
 var template = require('./lib/template.js');
 var path = require('path');
+var cookie = require('cookie');
 var sanitizeHtml = require('sanitize-html');
+
+function authIsOwner(req, res){
+    var isOwner = false;
+    var cookies = {};
+    if(req.headers.cookie){
+        cookies = cookie.parse(req.headers.cookie);
+    }
+    if(cookies.email === 'kennycho@naver.com' && cookies.password === '111111'){
+        isOwner = true;
+    }
+    return isOwner;
+}
+
+function authStatusUI(req, res){
+    var authStatusUI = authIsOwner(req, res) ? 
+        `<a href="/logout_process">logout</a>` :
+        `<a href="/login">login</a>`;
+    return authStatusUI;
+}
 
 var app = http.createServer(function(request, response) {
     var _url = request.url;
     var queryData = url.parse(_url, true).query;
     var pathname = url.parse(_url, true).pathname;
-
+    
     if(pathname === '/') {
         if(queryData.id === undefined) {
             fs.readdir('./data', function(error, filelist) {
@@ -20,7 +40,7 @@ var app = http.createServer(function(request, response) {
                 var list = template.list(filelist);
                 var html = template.HTML(title, list,
                     `<h2>${title}</h2><p>${description}</p>`,
-                    `<a href="/create">create</a>`
+                    `<a href="/create">create</a>`, authStatusUI(request, response)
                 );
                 response.writeHead(200);
                 response.end(html);
@@ -42,7 +62,7 @@ var app = http.createServer(function(request, response) {
                         <form action="delete_process" method="post">
                             <input type="hidden" name="id" value="${sanitizedTitle}">
                             <input type="submit" value="delete">
-                        </form>`
+                        </form>`, authStatusUI(request, response)
                     );
                     response.writeHead(200);
                     response.end(html);
@@ -50,6 +70,10 @@ var app = http.createServer(function(request, response) {
             });
         }
     } else if(pathname === '/create') {
+        if(!authIsOwner(request, response)){
+            response.end("Log In Required!");
+            return false;
+        }
         fs.readdir('./data', function(error, filelist) {
             var title = 'WEB - create';
             var list = template.list(filelist);
@@ -63,11 +87,15 @@ var app = http.createServer(function(request, response) {
                         <input type="submit">
                     </p>
                 </form>
-            `, '');
+            `, '', authStatusUI(request, response));
             response.writeHead(200);
             response.end(html);
         });
     } else if(pathname === '/create_process') {
+        if(!authIsOwner(request, response)){
+            response.end("Log In Required!");
+            return false;
+        }
         var body = '';
         request.on('data', function(data) {
             body = body + data;
@@ -82,6 +110,10 @@ var app = http.createServer(function(request, response) {
             });
         });
     } else if(pathname === '/update') {
+        if(!authIsOwner(request, response)){
+            response.end("Log In Required!");
+            return false;
+        }
         fs.readdir('./data', function(error, filelist) {
             var filteredId = path.parse(queryData.id).base;
             fs.readFile(`data/${filteredId}`, 'utf8', function(err, description) {
@@ -100,13 +132,18 @@ var app = http.createServer(function(request, response) {
                         </p>
                     </form>
                     `,
-                    `<a href="/create">create</a> <a href="/update?id=${title}">update</a>`
+                    `<a href="/create">create</a> <a href="/update?id=${title}">update</a>`,
+                    authStatusUI(request, response)
                 );
                 response.writeHead(200);
                 response.end(html);
             });
         });
     } else if(pathname === '/update_process') {
+        if(!authIsOwner(request, response)){
+            response.end("Log In Required!");
+            return false;
+        }
         var body = '';
         request.on('data', function(data) {
             body = body + data;
@@ -124,6 +161,10 @@ var app = http.createServer(function(request, response) {
             });
         });
     } else if(pathname === '/delete_process') {
+        if(!authIsOwner(request, response)){
+            response.end("Log In Required!");
+            return false;
+        }
         var body = '';
         request.on('data', function(data) {
             body = body + data;
@@ -137,7 +178,61 @@ var app = http.createServer(function(request, response) {
                 response.end();
             });
         });
-    } else {
+    } else if(pathname === '/login'){
+        fs.readdir('./data', function(error, filelist) {
+            var title = 'Login';
+            var list = template.list(filelist);
+            var html = template.HTML(title, list,
+                `
+                <form action="/login_process" method="post">
+                    <p><input type="text" name="email" placeholder="email"></p>
+                    <p><input type="password" name="password" placeholder="password"></p>
+                    <p><input type="submit"></p>
+                </form>
+                `,
+                `<a href="/create">create</a>`
+            );
+            response.writeHead(200);
+            response.end(html);
+        });
+    }else if(pathname === '/login_process'){
+        var body = '';
+        request.on('data', function(data) {
+            body = body + data;
+        });
+        request.on('end', function() {
+            var post = qs.parse(body);
+            if(post.email === 'kennycho@naver.com' && post.password === '111111'){
+                response.writeHead(302, {
+                    'Set-Cookie':[
+                        `email=${post.email}`,
+                        `password=${post.password}`,
+                        `nickname=kenny`
+                    ],
+                    Location: `/`
+                });
+                response.end();
+            }else{
+                response.end('Who?');
+            }
+        });
+    }else if(pathname === '/logout_process'){
+        var body = '';
+        request.on('data', function(data) {
+            body = body + data;
+        });
+        request.on('end', function() {
+            response.writeHead(302, {
+                'Set-Cookie' :[
+                    `email=; Max-Age=0`,
+                    `password=; Max-Age=0`,
+                    `nickname=; Max-Age=0`
+                ],
+                Location: `/`
+            });
+            response.end(); 
+        });
+    }else {
         response.writeHead(404);
         response.end('Not found');
     }
